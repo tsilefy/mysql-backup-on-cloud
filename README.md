@@ -1,4 +1,4 @@
-# MySQL-Backup-on-Google-Cloud-Storage
+# MySQL Backup on Google Cloud Storage
 This a simple tutorial for backup MySQL database on Goolge Cloud Storage
 
 ## Setup Google Cloud Storage
@@ -88,12 +88,12 @@ We are going to create a bash script to dump the test database into a local dire
 
 On the MySQL server machine create a local directory where to store local copy of backups
 
-      mkdir -p /backups/mysql
+      sudo mkdir -p /etc/mysql/backup/data
 
-Create the backup script as ``backup.sh`` file 
+Create the backup script as ``/etc/mysql/backup/backup.sh`` file 
 
-touch ~/backup.sh
-chmod u+x ~/backup.sh
+      sudo touch /etc/mysql/backup/backup.sh
+      sudo chmod u+x /etc/mysql/backup/backup.sh
 
 and edit the contents as following
 ```bash
@@ -108,33 +108,64 @@ host="localhost"
 server=$(hostname)
 db_name="employees"
 # other options
-backup_path="/backups/mysql"
+backup_path="/etc/mysql/backup/data"
 bucket_name="mysql-backups-storage"
 date=$(date +"%H:%M:%S-%d-%b-%Y")
 # Set default file permissions
 umask 177
 # Dump database into SQL file
 mysqldump --user=$user --password=$password --host=$host $db_name > $backup_path/$server-$db_name-$date.sql
+# Delete files older than 2 days from local machine
+find $backup_path/* -mtime +2 -exec rm {} \;
 # Synchronize local backup directory to a Google Cloud Storage bucket
 gsutil rsync -r $backup_path gs://$bucket_name
 ```
 
+Test the script for the first time
 
+      sudo /etc/mysql/backup/backup.sh
 
+check if the backup file has been created on the local machine
 
+      ls -l /etc/mysql/backup/data
+      -rw-------. 1 root root 168375941 Nov 11 18:12 mysql-server-employees-18:11:57-11-Nov-2017.sql
 
+and check if the file has been uploaded to the cloud bucket
 
+      gsutil list gs://mysql-backups-storage
+      gs://mysql-backups-storage/mysql-server-employees-18:11:57-11-Nov-2017.sql
 
+Now we want this script to be executed every hour. To make this happens, let's to use the *Cron* daemon. Using Cron you can run scripts automatically within a specified period of time.
 
+Check if the daemon is running
 
+      systemctl status crond.service
 
+If not, start and enable it
 
+      systemctl enable crond.service
+      systemctl start crond.service
 
+To configure cron jobs, as root modify the ``/etc/crontab`` file
 
+```bash
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=root
 
+# Example of job definition:
+# .---------------- minute (0 - 59)
+# |  .------------- hour (0 - 23)
+# |  |  .---------- day of month (1 - 31)
+# |  |  |  .------- month (1 - 12) OR jan,feb,mar,apr ...
+# |  |  |  |  .---- day of week (0 - 6) (Sunday=0 or 7) OR sun,mon,tue,wed,thu,fri,sat
+# |  |  |  |  |
+# *  *  *  *  * user-name  command to be executed
+ 30  *  *  *  * root       /etc/mysql/backup/backup.sh
+```
 
+and restart the Cron daemon
 
+      systemctl restart crond.service
 
-      
-      
-      
+So, in this simple tutorial, we enabled the backup of a MySQL database dupm file and upload the file on a remote bucket on the Goolge Cloud Storage platform.
